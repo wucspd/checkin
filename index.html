@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ระบบเช็คอิน-เช็คเอาท์ออนไลน์</title>
+  <!-- Google Fonts: Kanit -->
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Font Awesome -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" rel="stylesheet">
+  <!-- SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <!-- LINE LIFF SDK -->
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <!-- Supabase JS SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      font-family: 'Kanit', sans-serif;
+      background-color: #f4f7f6;
+      color: #334155;
+      min-height: 100vh;
+      padding-bottom: 30px;
+    }
+    .app-container {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+    .card-custom {
+      border: none;
+      border-radius: 18px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
+      background: #ffffff;
+    }
+    .profile-img {
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid #e0f2fe;
+    }
+    .status-badge {
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+    .status-ok {
+      background-color: #dcfce7;
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+    }
+    .status-out {
+      background-color: #fee2e2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+    .status-wait {
+      background-color: #fef3c7;
+      color: #b45309;
+      border: 1px solid #fde68a;
+    }
+    .btn-action {
+      border-radius: 14px;
+      padding: 15px;
+      font-size: 1.1rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .btn-checkin {
+      background-color: #10b981;
+      color: white;
+      border: none;
+    }
+    .btn-checkin:hover:not(:disabled) {
+      background-color: #059669;
+      color: white;
+    }
+    .btn-checkout {
+      background-color: #f59e0b;
+      color: white;
+      border: none;
+    }
+    .btn-checkout:hover:not(:disabled) {
+      background-color: #d97706;
+      color: white;
+    }
+    .btn-action:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #loading-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(255,255,255,0.92);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- หน้าจอโหลดข้อมูลเริ่มต้น -->
+  <div id="loading-overlay">
+    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+    <div id="loading-text" class="fw-medium text-secondary">กำลังเชื่อมต่อระบบ...</div>
+  </div>
+
+  <div class="app-container">
+    <!-- ส่วนหัวแสดงโปรไฟล์ผู้ใช้ -->
+    <div class="card card-custom p-3 mb-3">
+      <div class="d-flex align-items-center">
+        <img id="user-pic" src="https://via.placeholder.com/70" class="profile-img me-3" alt="Profile">
+        <div>
+          <h6 class="mb-0 fw-bold" id="display-name">กำลังโหลด...</h6>
+          <small class="text-muted" id="user-detail">รอการตรวจสอบข้อมูล</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- ส่วนที่ 1: ฟอร์มลงทะเบียน (แสดงเฉพาะคนที่เข้าใช้งานครั้งแรก) -->
+    <div id="register-section" class="card card-custom p-4 d-none">
+      <h5 class="fw-bold mb-1 text-primary"><i class="fa-solid fa-user-check me-2"></i>ลงทะเบียนผู้ใช้งานใหม่</h5>
+      <p class="text-muted small mb-3">กรุณากรอกข้อมูลส่วนตัวสำหรับใช้งานในครั้งแรก</p>
+      
+      <form id="register-form">
+        <div class="mb-3">
+          <label class="form-label small fw-medium">รหัสประจำตัว (พนักงาน / นักศึกษา) <span class="text-danger">*</span></label>
+          <input type="text" id="reg-empid" class="form-control" placeholder="ระบุรหัสประจำตัว" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-medium">ชื่อ - นามสกุล <span class="text-danger">*</span></label>
+          <input type="text" id="reg-name" class="form-control" placeholder="ระบุคำนำหน้า ชื่อ และนามสกุล" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-medium">สังกัด / หน่วยงาน <span class="text-danger">*</span></label>
+          <input type="text" id="reg-dept" class="form-control" placeholder="ระบุฝ่าย/สำนักวิชา/หน่วยงาน" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-medium">เบอร์โทรศัพท์ (ตัวเลข 10 หลัก) <span class="text-danger">*</span></label>
+          <input type="tel" id="reg-phone" class="form-control" maxlength="10" pattern="[0-9]{10}" placeholder="08XXXXXXXX" required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100 py-2 rounded-3 fw-medium">
+          <i class="fa-solid fa-floppy-disk me-2"></i>บันทึกข้อมูลและเข้าสู่ระบบ
+        </button>
+      </form>
+    </div>
+
+    <!-- ส่วนที่ 2: หน้ากดเช็คอิน/เช็คเอาท์ (แสดงเมื่อลงทะเบียนแล้ว) -->
+    <div id="checkin-section" class="card card-custom p-4 d-none">
+      <div class="text-center mb-3">
+        <span class="badge bg-info bg-opacity-10 text-primary px-3 py-2 rounded-pill mb-2">
+          <i class="fa-solid fa-location-dot me-1"></i> <span id="loc-name">จุดเช็คอินหลัก</span>
+        </span>
+        <h2 class="fw-bold mb-0" id="live-clock">00:00:00</h2>
+        <small class="text-muted" id="live-date">กำลังโหลดวันที่...</small>
+      </div>
+
+      <!-- กล่องแสดงสถานะพิกัด GPS -->
+      <div id="gps-box" class="status-badge status-wait mb-3 text-center">
+        <i class="fa-solid fa-satellite-dish fa-spin me-2"></i>กำลังตรวจสอบพิกัด GPS จากมือถือ...
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center small text-muted mb-3 px-1">
+        <span>รัศมีที่อนุญาต: <strong id="allow-radius">-</strong> เมตร</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="checkGPS()">
+          <i class="fa-solid fa-rotate me-1"></i>อัปเดตพิกัดใหม่
+        </button>
+      </div>
+
+      <!-- ปุ่มกดเช็คอิน / เช็คเอาท์ -->
+      <div class="d-grid gap-3 mt-2">
+        <button id="btn-in" class="btn btn-action btn-checkin" onclick="submitCheckInOut('เข้างาน')" disabled>
+          <i class="fa-solid fa-right-to-bracket me-2"></i>กดเช็คอิน (เข้างาน)
+        </button>
+        <button id="btn-out" class="btn btn-action btn-checkout" onclick="submitCheckInOut('ออกงาน')" disabled>
+          <i class="fa-solid fa-right-from-bracket me-2"></i>กดเช็คเอาท์ (ออกงาน)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // ตั้งค่าการเชื่อมต่อระบบของคุณ
+    // ==========================================
+    const LIFF_ID = "2012586156-fqd85ulz";
+    const SUPABASE_URL = "https://oefxqpeeyvwimrltkjox.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lZnhxcGVleXZ3aW1ybHRram94Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ0Njk4MzksImV4cCI6MjExMDA0NTgzOX0.w1mEquMeif1Nr4Hw_2THTJ2Hk61S7iMTOTe0j19lApo";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUserUID = "";
+    let appSetting = null;
+    let currentCoords = null;
+
+    // นาฬิกาแสดงเวลาปัจจุบันบนหน้าจอ
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById("live-clock").innerText = now.toLocaleTimeString('th-TH', { hour12: false });
+      document.getElementById("live-date").innerText = now.toLocaleDateString('th-TH', { dateStyle: 'long' });
+    }, 1000);
+
+    // เริ่มต้นทำงานเมื่อเปิดหน้าเว็บ
+    window.onload = async function() {
+      try {
+        await liff.init({ liffId: LIFF_ID });
+        if (!liff.isLoggedIn()) {
+          liff.login();
+          return;
+        }
+
+        const profile = await liff.getProfile();
+        currentUserUID = profile.userId;
+        document.getElementById("display-name").innerText = profile.displayName;
+        if (profile.pictureUrl) {
+          document.getElementById("user-pic").src = profile.pictureUrl;
+        }
+
+        // โหลดค่าพิกัดสถานที่จากตาราง app_settings
+        const { data: settingData } = await supabaseClient
+          .from('app_settings')
+          .select('*')
+          .eq('id', 1)
+          .single();
+
+        if (settingData) {
+          appSetting = settingData;
+          document.getElementById("loc-name").innerText = settingData.location_name;
+          document.getElementById("allow-radius").innerText = settingData.allowed_radius_meters;
+        }
+
+        // เช็คว่าผู้ใช้งานคนนี้เคยลงทะเบียนหรือยัง
+        const { data: userData } = await supabaseClient
+          .from('users')
+          .select('*')
+          .eq('line_uid', currentUserUID)
+          .maybeSingle();
+
+        document.getElementById("loading-overlay").classList.add("d-none");
+
+        if (!userData) {
+          // ยังไม่เคยลงทะเบียน -> แสดงฟอร์มลงทะเบียน
+          document.getElementById("user-detail").innerText = "สถานะ: ยังไม่ได้ลงทะเบียน";
+          document.getElementById("register-section").classList.remove("d-none");
+        } else {
+          // ลงทะเบียนแล้ว -> แสดงหน้าเช็คอินและตรวจสอบ GPS ทันที
+          showCheckinPage(userData);
+        }
+
+      } catch (err) {
+        document.getElementById("loading-overlay").classList.add("d-none");
+        Swal.fire("เกิดข้อผิดพลาด", "ไม่สามารถเชื่อมต่อ LINE LIFF ได้: " + err.message, "error");
+      }
+    };
+
+    // แสดงหน้าจอเช็คอิน
+    function showCheckinPage(userData) {
+      document.getElementById("display-name").innerText = userData.full_name;
+      document.getElementById("user-detail").innerText = `${userData.emp_id} | ${userData.department}`;
+      document.getElementById("register-section").classList.add("d-none");
+      document.getElementById("checkin-section").classList.remove("d-none");
+      checkGPS();
+    }
+
+    // บันทึกการลงทะเบียนผู้ใช้ใหม่
+    document.getElementById("register-form").addEventListener("submit", async function(e) {
+      e.preventDefault();
+      const empId = document.getElementById("reg-empid").value.trim();
+      const fullName = document.getElementById("reg-name").value.trim();
+      const dept = document.getElementById("reg-dept").value.trim();
+      const phone = document.getElementById("reg-phone").value.trim();
+
+      Swal.fire({ title: 'กำลังบันทึกข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+      const { data, error } = await supabaseClient
+        .from('users')
+        .insert([{ line_uid: currentUserUID, emp_id: empId, full_name: fullName, department: dept, phone: phone }])
+        .select()
+        .single();
+
+      if (error) {
+        Swal.fire("บันทึกไม่สำเร็จ", error.message, "error");
+        return;
+      }
+
+      Swal.fire({ icon: "success", title: "ลงทะเบียนสำเร็จ!", timer: 1500, showConfirmButton: false });
+      showCheckinPage(data);
+    });
+
+    // คำนวณระยะห่างระหว่าง 2 พิกัด (Haversine Formula)
+    function calcDistanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371e3;
+      const toRad = deg => (deg * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    }
+
+    // ดึงพิกัด GPS และตรวจสอบเงื่อนไข
+    function checkGPS() {
+      const gpsBox = document.getElementById("gps-box");
+      const btnIn = document.getElementById("btn-in");
+      const btnOut = document.getElementById("btn-out");
+
+      gpsBox.className = "status-badge status-wait mb-3 text-center";
+      gpsBox.innerHTML = `<i class="fa-solid fa-satellite-dish fa-spin me-2"></i>กำลังดึงพิกัด GPS ล่าสุด...`;
+      btnIn.disabled = true;
+      btnOut.disabled = true;
+
+      if (!navigator.geolocation) {
+        gpsBox.className = "status-badge status-out mb-3 text-center";
+        gpsBox.innerHTML = `อุปกรณ์ของคุณไม่รองรับการระบุตำแหน่ง GPS`;
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          currentCoords = pos.coords;
+          const dist = calcDistanceMeters(
+            pos.coords.latitude,
+            pos.coords.longitude,
+            appSetting.target_lat,
+            appSetting.target_lng
+          );
+
+          // ตรวจสอบว่าอยู่ในรัศมีที่อนุญาตหรือไม่
+          if (dist <= appSetting.allowed_radius_meters) {
+            gpsBox.className = "status-badge status-ok mb-3 text-center";
+            gpsBox.innerHTML = `<i class="fa-solid fa-circle-check me-2"></i>อยู่ในพื้นที่เช็คอิน (ห่างจุดเช็คอิน <strong>${dist}</strong> เมตร)`;
+            btnIn.disabled = false;
+            btnOut.disabled = false;
+          } else {
+            gpsBox.className = "status-badge status-out mb-3 text-center";
+            gpsBox.innerHTML = `<i class="fa-solid fa-circle-xmark me-2"></i>อยู่นอกพื้นที่! คุณห่างออกไป <strong>${dist}</strong> เมตร<br><small>(ต้องอยู่ในระยะไม่เกิน ${appSetting.allowed_radius_meters} เมตร จึงจะกดปุ่มได้)</small>`;
+            btnIn.disabled = true;
+            btnOut.disabled = true;
+          }
+        },
+        (err) => {
+          gpsBox.className = "status-badge status-out mb-3 text-center";
+          gpsBox.innerHTML = `<i class="fa-solid fa-triangle-exclamation me-2"></i>ไม่สามารถดึงพิกัด GPS ได้ กรุณาเปิดสิทธิ์ Location`;
+          Swal.fire({
+            icon: "warning",
+            title: "กรุณาเปิดตำแหน่งที่ตั้ง (GPS)",
+            html: "ระบบไม่สามารถเข้าถึงพิกัดของคุณได้<br><small>กรุณาเปิด GPS ในมือถือ และอนุญาตให้แอป LINE เข้าถึงตำแหน่งที่ตั้ง (Location) แล้วกดปุ่ม <b>อัปเดตพิกัดใหม่</b></small>",
+            confirmButtonText: "เข้าใจแล้ว"
+          });
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      );
+    }
+
+    // ส่งข้อมูลบันทึกเข้าฐานข้อมูลและส่ง Flex Message เข้าแชท LINE
+    async function submitCheckInOut(actionType) {
+      if (!currentCoords) {
+        Swal.fire("ไม่พบพิกัด", "กรุณากดอัปเดตพิกัดใหม่ก่อนทำรายการ", "warning");
+        return;
+      }
+
+      Swal.fire({
+        title: `กำลังบันทึก${actionType}...`,
+        text: "กรุณารอสักครู่",
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+      });
+
+      const { data: res, error } = await supabaseClient.rpc('submit_attendance', {
+        p_line_uid: currentUserUID,
+        p_action_type: actionType,
+        p_user_lat: currentCoords.latitude,
+        p_user_lng: currentCoords.longitude,
+        p_accuracy: currentCoords.accuracy
+      });
+
+      if (error || !res.success) {
+        Swal.fire("บันทึกไม่สำเร็จ", error ? error.message : res.message, "error");
+        return;
+      }
+
+      // ส่งการ์ด Flex Message เข้าห้องแชทส่วนตัวฟรีผ่าน liff.sendMessages()
+      const headerColor = res.status === "มาสาย" ? "#EF4444" : (actionType === "เข้างาน" ? "#10B981" : "#F59E0B");
+      
+      if (liff.isInClient()) {
+        try {
+          await liff.sendMessages([
+            {
+              type: "flex",
+              altText: `บันทึก${res.action_type}สำเร็จ เวลา ${res.time} น.`,
+              contents: {
+                type: "bubble",
+                header: {
+                  type: "box",
+                  layout: "vertical",
+                  backgroundColor: headerColor,
+                  paddingAll: "16px",
+                  contents: [
+                    { type: "text", text: `บันทึก${res.action_type}สำเร็จ`, color: "#FFFFFF", weight: "bold", size: "lg" },
+                    { type: "text", text: res.location_name, color: "#FFFFFF", size: "xs" }
+                  ]
+                },
+                body: {
+                  type: "box",
+                  layout: "vertical",
+                  spacing: "sm",
+                  paddingAll: "16px",
+                  contents: [
+                    { type: "text", text: res.full_name, weight: "bold", size: "md", wrap: true },
+                    { type: "text", text: `รหัส: ${res.emp_id}`, size: "xs", color: "#888888" },
+                    { type: "separator", margin: "md" },
+                    {
+                      type: "box",
+                      layout: "baseline",
+                      margin: "md",
+                      contents: [
+                        { type: "text", text: "เวลา:", size: "sm", color: "#666666", flex: 2 },
+                        { type: "text", text: `${res.time} น.`, size: "sm", weight: "bold", color: "#333333", flex: 4 }
+                      ]
+                    },
+                    {
+                      type: "box",
+                      layout: "baseline",
+                      contents: [
+                        { type: "text", text: "วันที่:", size: "sm", color: "#666666", flex: 2 },
+                        { type: "text", text: res.date, size: "sm", color: "#333333", flex: 4 }
+                      ]
+                    },
+                    {
+                      type: "box",
+                      layout: "baseline",
+                      contents: [
+                        { type: "text", text: "ระยะห่าง:", size: "sm", color: "#666666", flex: 2 },
+                        { type: "text", text: `${res.distance} เมตร`, size: "sm", color: "#333333", flex: 4 }
+                      ]
+                    },
+                    {
+                      type: "box",
+                      layout: "baseline",
+                      contents: [
+                        { type: "text", text: "ผลลัพธ์:", size: "sm", color: "#666666", flex: 2 },
+                        { type: "text", text: res.status, size: "sm", weight: "bold", color: headerColor, flex: 4 }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          ]);
+        } catch (msgErr) {
+          console.warn("ไม่สามารถส่งข้อความเข้าแชทได้:", msgErr);
+        }
+      }
+
+      await Swal.fire({
+        icon: "success",
+        title: `บันทึก${res.action_type}เรียบร้อย!`,
+        html: `เวลา: <b>${res.time} น.</b> (${res.status})<br>ระยะห่างจากจุดเช็คอิน: ${res.distance} เมตร`,
+        confirmButtonText: "ปิดหน้าต่าง"
+      });
+
+      if (liff.isInClient()) {
+        liff.closeWindow();
+      }
+    }
+  </script>
+</body>
+</html>
